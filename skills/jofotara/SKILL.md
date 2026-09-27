@@ -28,6 +28,7 @@ npx jofotara-kit template income-receivable-invoice   # 388/021 (income-receivab
 npx jofotara-kit validate out/*.xml            # lint XML (also accepts {"invoice": base64} bodies)
 npx jofotara-kit rules                         # every rule with its manual page
 npx jofotara-kit serve --port 8080             # local mock of POST /core/invoices/
+npx jofotara-kit send INV-1.xml RET-1.xml      # send in order to the mock; classify each answer
 ```
 
 If the `jofotara` MCP server is connected, prefer its tools (`build_invoice`, `build_credit_note`,
@@ -43,9 +44,14 @@ Workflow:
 2. If the user's code must render XML itself, generate the matching template and treat its
    structure as the contract; only values change. Map their data model with [reference.md](reference.md).
 3. **Validate every XML your code produces** (`jofotara-kit validate`) and add it to tests/CI. Fix every error.
-4. Point the base URL at `http://127.0.0.1:8080` (`jofotara-kit serve`) and run the full flow:
+4. Send through `createClient({ baseUrl, clientId, secretKey }).submit(doc)` (or `jofotara-kit send`),
+   which sorts every answer into `accepted` / `rejected` / `unknown` / `not-sent`. Make the user's code
+   handle all four; `unknown` must never trigger a new document for the same sale. If their code has its
+   own HTTP client, classify responses with `classifyResponse(status, body)`.
+5. Point the base URL at `http://127.0.0.1:8080` (`jofotara-kit serve`) and run the full flow:
    invoice → partial return → second return → over-return (must fail).
-5. Only then switch to `https://backend.jofotara.gov.jo` — config only.
+6. Only then switch to `https://backend.jofotara.gov.jo` — config only. Never send test documents
+   there, and never run `send --production` on the user's behalf.
 
 Findings show `manual p.N` when the manual states the rule, `inferred` otherwise. The mock
 models the manual; it is not the government system. Say so to the user.

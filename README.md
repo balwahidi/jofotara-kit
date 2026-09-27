@@ -1,6 +1,8 @@
 # jofotara-kit
 
-**The JoFotara sandbox that doesn't exist — plus a document builder, a validator and an AI agent skill.**
+**[اقرأ الدليل بالعربية](README.ar.md)**
+
+**The JoFotara sandbox that doesn't exist — plus a document builder, a safe submission client, a validator and an AI agent skill.**
 
 JoFotara (فوترة, Jordan's ISTD e-invoicing system) has no test environment. The only way to
 see if your XML is right is to send a real invoice with real credentials and create a real
@@ -9,6 +11,8 @@ tax record. `jofotara-kit` lets you get the shape right locally first:
 - **`build`** — turns plain sale data into a valid invoice or return: tax-inclusive prices,
   line and order discounts, exempt and zero-rated lines, buyer rules, and partial returns that
   add up to the invoice exactly. From TypeScript/JavaScript, or from any language through JSON.
+- **`send`** — submits documents and sorts every answer into accepted, rejected, unknown or not
+  sent, so a timeout is never mistaken for a rejection and resent as a duplicate tax record.
 - **`validate`** — lints JoFotara UBL 2.1 XML against the rules of the official ISTD technical
   guide (v1.4): type names, tax categories `S`/`Z`/`O` and allowed VAT rates, buyer IDs,
   totals formulas, return references and the extra fields sales returns need. Every finding
@@ -123,6 +127,47 @@ A return names its original (and earlier returns) by path, relative to the JSON 
 
 A build error exits with status 1 and prints the rule id and the reason.
 
+## Send documents
+
+The dangerous part of going live is not the XML — it is the answer. A timeout does not mean the
+invoice was rejected; resending a new document for the same sale can create a duplicate tax
+record. The client sorts every submission into one of four outcomes:
+
+```ts
+import { createClient, JOFOTARA_PRODUCTION_URL } from 'jofotara-kit';
+
+const jofotara = createClient({
+  baseUrl: 'http://127.0.0.1:8080',   // required: the local mock, or JOFOTARA_PRODUCTION_URL on purpose
+  clientId: process.env.JOFOTARA_CLIENT_ID!,
+  secretKey: process.env.JOFOTARA_SECRET_KEY!,
+});
+
+const outcome = await jofotara.submit(invoice);   // XML, request body, or a build result
+```
+
+| `outcome.status` | When | What to do |
+|---|---|---|
+| `accepted` | HTTP success **and** an explicit success status **and** a QR code | Store `outcome.qr` and `outcome.raw`; print the QR on the invoice. |
+| `rejected` | Explicit rejection (`NOT_SUBMITTED`, `ERROR`, an error list) and no sign of acceptance — also when it arrives with HTTP 200 | Show `outcome.errors`, fix, send again. |
+| `unknown` | Timeout, dropped connection, unreadable or HTML response, 5xx, success without a QR, contradictory answers | **Do not send a new document for this sale.** Check the portal; to retry, send this exact XML again (same UUID). |
+| `not-sent` | The document failed validation, or the server could not be reached at all (DNS, connection refused) | Nothing was recorded; fix and send. |
+
+The client validates before sending (`validateBeforeSending: false` turns that off), never
+retries on its own, and never puts the secret key in an outcome. `classifyResponse(status, body)`
+applies the same rules to a response you received with your own HTTP code.
+
+From the command line, documents are sent in order and sending stops at the first one that is not
+accepted, so a return is never sent after its invoice failed:
+
+```bash
+npx jofotara-kit serve &                                  # the local mock
+npx jofotara-kit send INV-1001.xml RET-1001.xml           # goes to the mock by default
+```
+
+`send --production` goes to `https://backend.jofotara.gov.jo` and takes the credentials only from
+the `JOFOTARA_CLIENT_ID` and `JOFOTARA_SECRET_KEY` environment variables. Exit status: 0 accepted,
+1 rejected or not sent, 3 unknown.
+
 ## MCP server
 
 Give any MCP client (Claude Code, Cursor, Devin, Windsurf, …) direct access to the validator:
@@ -151,6 +196,7 @@ Or copy [`skills/jofotara`](skills/jofotara) into your agent's skills folder
 | Command | What it does |
 |---|---|
 | `build [input.json] [--body \| --json]` | Build an invoice or return from JSON (see [Build documents](#build-documents)). Reads stdin if no file. Exit 1 on build errors. |
+| `send <files...> [--production \| --base-url URL] [--json] [--timeout MS] [--no-validate]` | Send documents in order and classify each answer (see [Send documents](#send-documents)). Mock by default; credentials from the environment. |
 | `validate [files...] [--json]` | Validate XML, a `{"invoice": base64}` request body, or bare base64. Reads stdin if no files. Exit 1 on errors. |
 | `serve [--port] [--host] [--client-id] [--secret-key] [--reject-status]` | Run the mock. With `--client-id/--secret-key` only those credentials pass. `--reject-status 200` tests "HTTP 200 but rejected" handling. |
 | `template <name> [--body]` | Print a sample XML, or its JSON request body. Names below. |

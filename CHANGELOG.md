@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.0
+
+- **Submission client.** `createClient({ baseUrl, clientId, secretKey }).submit(document)` sends a
+  document and sorts the answer into four outcomes:
+  - `accepted`: HTTP success, an explicit success status and a QR code;
+  - `rejected`: explicit rejection and no sign of acceptance, also with HTTP 200;
+  - `unknown`: timeouts, dropped connections, unreadable answers, 5xx, success without a QR;
+  - `not-sent`: failed validation, or the server could not be reached at all.
+
+  `baseUrl` is required, documents are validated before sending, nothing is retried
+  automatically, and the secret key never appears in an outcome. `classifyResponse(status, body)`
+  classifies responses received by other HTTP code.
+- `jofotara-kit send <files...>` sends documents in order to the local mock, or with `--production`
+  to the live API using credentials from `JOFOTARA_CLIENT_ID` / `JOFOTARA_SECRET_KEY`. It stops at the
+  first document that is not accepted and exits 3 on an unknown outcome.
+- Arabic guide: `README.ar.md`.
+
 ## 0.2.0
 
 - **Document builder.** `buildInvoice` and `buildCreditNote` turn plain sale data into valid
