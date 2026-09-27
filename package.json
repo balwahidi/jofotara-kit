@@ -1,7 +1,7 @@
 {
   "name": "jofotara-kit",
-  "version": "0.1.0",
-  "description": "Local mock server, XML validator and AI agent skill for JoFotara (Jordan ISTD e-invoicing) integrations.",
+  "version": "0.2.0",
+  "description": "Document builder, XML validator, local mock server and AI agent skill for JoFotara (Jordan ISTD e-invoicing) integrations.",
   "type": "module",
   "bin": {
     "jofotara-kit": "dist/cli.js"
@@ -14,7 +14,8 @@
   },
   "files": [
     "dist",
-    "skills"
+    "skills",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=22.18"
@@ -36,7 +37,9 @@
     "invoice",
     "validator",
     "mock-server",
-    "agent-skill"
+    "agent-skill",
+    "builder",
+    "ubl-generator"
   ],
   "license": "MIT",
   "repository": {

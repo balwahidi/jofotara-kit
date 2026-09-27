@@ -1,11 +1,14 @@
 # jofotara-kit
 
-**The JoFotara sandbox that doesn't exist — plus a validator and an AI agent skill.**
+**The JoFotara sandbox that doesn't exist — plus a document builder, a validator and an AI agent skill.**
 
 JoFotara (فوترة, Jordan's ISTD e-invoicing system) has no test environment. The only way to
 see if your XML is right is to send a real invoice with real credentials and create a real
 tax record. `jofotara-kit` lets you get the shape right locally first:
 
+- **`build`** — turns plain sale data into a valid invoice or return: tax-inclusive prices,
+  line and order discounts, exempt and zero-rated lines, buyer rules, and partial returns that
+  add up to the invoice exactly. From TypeScript/JavaScript, or from any language through JSON.
 - **`validate`** — lints JoFotara UBL 2.1 XML against the rules of the official ISTD technical
   guide (v1.4): type names, tax categories `S`/`Z`/`O` and allowed VAT rates, buyer IDs,
   totals formulas, return references and the extra fields sales returns need. Every finding
@@ -33,17 +36,92 @@ npx jofotara-kit serve --port 8080
 Then point your integration's base URL at `http://127.0.0.1:8080` instead of
 `https://backend.jofotara.gov.jo`. Nothing else changes.
 
-To use it from your test suite or CI, add it as a dev dependency (Node.js 22.18 or later):
-
-```bash
-npm install --save-dev jofotara-kit
-```
-
 ```bash
 curl -s http://127.0.0.1:8080/core/invoices/ \
   -H "Client-Id: test" -H "Secret-Key: test" -H "Content-Type: application/json" \
   -d "$(npx jofotara-kit template invoice --body)"
 ```
+
+To use it from your code, tests or CI, install it (Node.js 22.18 or later):
+
+```bash
+npm install jofotara-kit
+```
+
+## Build documents
+
+Describe the sale; the builder does the JoFotara math and writes XML that passes every rule.
+
+```ts
+import { buildInvoice, buildCreditNote } from 'jofotara-kit';
+
+const invoice = buildInvoice({
+  id: 'INV-1001', icv: 57,                       // your number and your invoice counter
+  seller: { taxNumber: '…', name: '…', incomeSourceSequence: '…' },
+  pricesIncludeTax: true,                        // shelf prices; VAT is taken out exactly
+  lines: [
+    { name: 'Coffee', quantity: 3, unitPrice: 2.5, taxRate: 16, discount: { percent: 10 } },
+    { name: 'Bread', quantity: 2, unitPrice: 0.75, taxRate: 0, taxCategory: 'Z' },
+  ],
+  orderDiscount: { amount: 1 },                  // spread over the lines for you
+});
+// invoice.xml, invoice.body (the request body to POST), invoice.document (every computed amount)
+
+const ret = buildCreditNote({
+  original: storedInvoiceXml,                    // the XML you sent and stored
+  previousReturns: [storedReturnXml],            // earlier returns against it
+  lines: [{ lineId: 1, quantity: 1 }],           // or 'all' for everything not yet returned
+  reason: 'Customer return', id: 'RET-1001', icv: 58,
+});
+```
+
+What it takes care of:
+
+- **Money** — exact arithmetic in micro-JOD, amounts written with six decimals. With
+  `pricesIncludeTax`, each line's amount plus VAT equals what the customer paid, exactly.
+- **Tax categories** — `S` at an allowed rate; a 0% line must say `Z` (exempt) or `O`
+  (zero-rated). Rates outside the manual's list are refused before any XML exists.
+- **Buyers** — a walk-in buyer (`TN` `0`, "Cash customer") by default; a named buyer is
+  required for receivables and cash sales above 10,000 JOD.
+- **Returns** — built from the original XML alone: original line numbers, names, prices,
+  categories, buyer and type name are mirrored, sales returns get their extra fields, returned
+  quantities are tracked across returns (over-returns are refused), and the last return of a line
+  takes exactly what is left, so the returns always add up to the invoice.
+- **Errors** — a `BuildError` whose `code` is the rule the input would break, e.g. `JOF-STA-005`
+  for an over-return.
+
+Keep the `uuid` of every document you send: a retry after a timeout must reuse the same XML.
+`readDocument(xml)` reads any stored JoFotara document back into plain amounts.
+
+**Special sales (013/023)** follow the manual's formulas (p.56-80) but have not been verified
+against the live API yet; builds report this in `warnings`.
+
+### From any language
+
+`jofotara-kit build` takes the same fields as JSON, so PHP, .NET, Python or Java code can shell out
+to it:
+
+```bash
+npx jofotara-kit build invoice.json > INV-1001.xml
+npx jofotara-kit build invoice.json --body     # the request body instead of XML
+npx jofotara-kit build invoice.json --json     # {xml, body, document, warnings}
+```
+
+A return names its original (and earlier returns) by path, relative to the JSON file:
+
+```json
+{
+  "type": "credit-note",
+  "original": "INV-1001.xml",
+  "previousReturns": ["RET-1000.xml"],
+  "lines": [{ "lineId": 1, "quantity": 1 }],
+  "reason": "Customer return",
+  "id": "RET-1001",
+  "icv": 58
+}
+```
+
+A build error exits with status 1 and prints the rule id and the reason.
 
 ## MCP server
 
@@ -57,7 +135,7 @@ Give any MCP client (Claude Code, Cursor, Devin, Windsurf, …) direct access to
 }
 ```
 
-Tools: `validate_invoice`, `get_template`, `list_rules`, `explain_rule`.
+Tools: `build_invoice`, `build_credit_note`, `validate_invoice`, `get_template`, `list_rules`, `explain_rule`.
 
 ## Install the agent skill
 
@@ -72,6 +150,7 @@ Or copy [`skills/jofotara`](skills/jofotara) into your agent's skills folder
 
 | Command | What it does |
 |---|---|
+| `build [input.json] [--body \| --json]` | Build an invoice or return from JSON (see [Build documents](#build-documents)). Reads stdin if no file. Exit 1 on build errors. |
 | `validate [files...] [--json]` | Validate XML, a `{"invoice": base64}` request body, or bare base64. Reads stdin if no files. Exit 1 on errors. |
 | `serve [--port] [--host] [--client-id] [--secret-key] [--reject-status]` | Run the mock. With `--client-id/--secret-key` only those credentials pass. `--reject-status 200` tests "HTTP 200 but rejected" handling. |
 | `template <name> [--body]` | Print a sample XML, or its JSON request body. Names below. |
@@ -125,10 +204,10 @@ Run `npx jofotara-kit rules` for the full list.
 
 ## Scope
 
-The validator and the mock cover all six document families in the manual, in JOD: income
-(`011`/`021`), general sales (`012`/`022`) and special sales (`013`/`023`), each as new
-invoice (388) and return (381) — full, partial and multiple returns. Templates cover income and
-general sales; special-sales templates are not written yet.
+The builder, the validator and the mock cover all six document families in the manual, in JOD:
+income (`011`/`021`), general sales (`012`/`022`) and special sales (`013`/`023`), each as new
+invoice (388) and return (381) — full, partial and multiple returns. Special sales are not yet
+verified against the live API. Templates cover income and general sales.
 
 ## Contributing
 

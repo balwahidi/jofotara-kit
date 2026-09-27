@@ -18,6 +18,7 @@ tax record. Never send test documents to production — use the local tooling.
 ## Tooling — use it, don't guess
 
 ```bash
+npx jofotara-kit build invoice.json            # valid invoice or return from JSON (stdin if no file)
 npx jofotara-kit template invoice              # 388/012 sales invoice (S, Z and O lines)
 npx jofotara-kit template credit-note          # 381/012 partial sales return
 npx jofotara-kit template income-invoice       # 388/011 income invoice (no VAT)
@@ -29,13 +30,18 @@ npx jofotara-kit rules                         # every rule with its manual page
 npx jofotara-kit serve --port 8080             # local mock of POST /core/invoices/
 ```
 
-If the `jofotara` MCP server is connected, prefer its tools (`validate_invoice`, `get_template`,
-`list_rules`, `explain_rule`) — same engine.
+If the `jofotara` MCP server is connected, prefer its tools (`build_invoice`, `build_credit_note`,
+`validate_invoice`, `get_template`, `list_rules`, `explain_rule`) — same engine.
 
 Workflow:
 
-1. Generate the matching template and treat its structure as the contract; only values change.
-2. Build the generator in the user's stack, mapping their data model to the fields in [reference.md](reference.md).
+1. **Don't hand-write the XML math.** In JavaScript/TypeScript use `buildInvoice` / `buildCreditNote`
+   from `jofotara-kit`; in any other stack write the sale as JSON and run `jofotara-kit build`. Both
+   handle tax-inclusive prices, discount spreading, S/Z/O, buyer rules and partial returns, and throw
+   a `BuildError` whose `code` is the rule the input would break. Returns take the stored original XML
+   plus earlier returns. Special sales (013/023) are built from the manual but not verified live.
+2. If the user's code must render XML itself, generate the matching template and treat its
+   structure as the contract; only values change. Map their data model with [reference.md](reference.md).
 3. **Validate every XML your code produces** (`jofotara-kit validate`) and add it to tests/CI. Fix every error.
 4. Point the base URL at `http://127.0.0.1:8080` (`jofotara-kit serve`) and run the full flow:
    invoice → partial return → second return → over-return (must fail).
