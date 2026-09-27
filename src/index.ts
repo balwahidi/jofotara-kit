@@ -11,3 +11,5 @@ export { BuildError, SPECIAL_SALES_WARNING, WALK_IN_BUYER, buildCreditNote, buil
 export type { BuildRequest, BuildResult, BuyerInput, CreditNoteInput, Discount, InvoiceInput, InvoiceLineInput, ReturnLineInput } from './build.ts';
 export { DocumentReadError, readDocument } from './document.ts';
 export type { Buyer, DocumentLine, JofotaraDocument, PaymentTerms, Seller, TaxCategory, Totals, Track } from './document.ts';
+export { JOFOTARA_PATH, JOFOTARA_PRODUCTION_URL, classifyResponse, createClient } from './client.ts';
+export type { ClientOptions, JofotaraClient, ResponseMessage, ResponseOutcome, SentDocument, SubmitOutcome } from './client.ts';

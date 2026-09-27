@@ -4,6 +4,8 @@ import { dirname, resolve } from 'node:path';
 import { parseArgs, styleText } from 'node:util';
 import { BuildError, buildDocument } from './build.ts';
 import type { BuildRequest } from './build.ts';
+import { JOFOTARA_PRODUCTION_URL, createClient } from './client.ts';
+import type { SubmitOutcome } from './client.ts';
 import { serveMcpStdio } from './mcp.ts';
 import { createMockServer } from './mock.ts';
 import { RULES } from './rules.ts';
@@ -17,17 +19,25 @@ const HELP = `jofotara-kit — local tooling for JoFotara (Jordan ISTD e-invoici
 Usage:
   jofotara-kit build [input.json] [--body | --json]
                                                Build a valid invoice or return from JSON (stdin if no file). Prints XML,
-                                               the request body, or {xml, body, document}. Returns may name the original
-                                               and previous returns as file paths, relative to the JSON file.
+                                               the request body, or {xml, body, document, warnings}. Returns may name the
+                                               original and previous returns as file paths, relative to the JSON file.
+  jofotara-kit send <files...> [--production | --base-url URL] [--json] [--timeout MS] [--no-validate]
+                                               Send documents in order and classify each answer: accepted, rejected,
+                                               unknown or not sent. Goes to the local mock (http://127.0.0.1:8080) unless
+                                               --production is given. Credentials come only from the JOFOTARA_CLIENT_ID and
+                                               JOFOTARA_SECRET_KEY environment variables. Stops at the first document that
+                                               is not accepted.
   jofotara-kit validate [files...] [--json]    Validate XML, a {"invoice": base64} body, or base64 (stdin if no files)
   jofotara-kit serve [--port 8080] [--host 127.0.0.1] [--client-id ID] [--secret-key KEY] [--reject-status 400]
                                                Run a local mock of POST /core/invoices/
   jofotara-kit template <name> [--body]        Print a sample in the manual's shape (or its JSON request body)
                                                ${Object.keys(TEMPLATES).join(', ')}
   jofotara-kit rules [--json]                  List every rule with severity and source (manual page)
-  jofotara-kit mcp                             MCP server over stdio (validate_invoice, get_template, list_rules, explain_rule)
+  jofotara-kit mcp                             MCP server over stdio (build_invoice, build_credit_note, validate_invoice,
+                                               get_template, list_rules, explain_rule)
 
-Exit codes: 0 ok, 1 validation or build errors, 2 usage error.
+Exit codes: 0 ok, 1 validation or build errors / rejected or not sent, 2 usage error,
+            3 unknown outcome (the document may have been recorded: check before sending anything again).
 Not affiliated with the Income and Sales Tax Department (ISTD).`;
 
 const color = (fmt: Parameters<typeof styleText>[0], s: string) => styleText(fmt, s);
@@ -41,6 +51,31 @@ function printReport(name: string, r: Report) {
     console.log(`  ${sev} ${color('bold', f.rule)} ${f.message} ${color('dim', `[${f.source ? `manual ${f.source}` : f.confidence}]`)}`);
     if (f.path) console.log(color('dim', `          at ${f.path}`));
     console.log(color('dim', `          fix: ${f.fix}`));
+  }
+}
+
+function printOutcome(file: string, o: SubmitOutcome) {
+  const doc = o.document ? ` ${o.document.id} (${o.document.uuid})` : '';
+  switch (o.status) {
+    case 'accepted':
+      console.log(`${color('green', 'ACCEPTED')}  ${file}${doc}`);
+      console.log(`  QR: ${o.qr}`);
+      for (const w of o.warnings) console.log(color('yellow', `  warning ${w.code} ${w.message}`));
+      break;
+    case 'rejected':
+      console.log(`${color('red', 'REJECTED')}  ${file}${doc}  (HTTP ${o.httpStatus})`);
+      for (const e of o.errors) console.log(`  ${color('bold', e.code || 'error')} ${e.message}`);
+      break;
+    case 'unknown':
+      console.log(`${color('yellow', 'UNKNOWN')}   ${file}${doc}  (${o.reason}${o.httpStatus ? `, HTTP ${o.httpStatus}` : ''})`);
+      console.log(`  ${o.message}`);
+      console.log(color('yellow', '  Do not send a new document for this sale. Check the JoFotara portal; to retry, resend this same file.'));
+      break;
+    case 'not-sent':
+      console.log(`${color('red', 'NOT SENT')}  ${file}${doc}  (${o.reason})`);
+      console.log(`  ${o.message}`);
+      for (const f of o.findings ?? []) if (f.severity === 'error') console.log(`  ${color('bold', f.rule)} ${f.message}`);
+      break;
   }
 }
 
@@ -107,6 +142,65 @@ async function main(argv: string[]): Promise<number> {
         console.error(`${color('red', 'BUILD ERROR')}  ${e.message}`);
         return 1;
       }
+    }
+    case 'send': {
+      const { values, positionals } = parseArgs({
+        args: rest,
+        allowPositionals: true,
+        options: {
+          production: { type: 'boolean' },
+          'base-url': { type: 'string' },
+          json: { type: 'boolean' },
+          timeout: { type: 'string', default: '30000' },
+          'no-validate': { type: 'boolean' },
+        },
+      });
+      if (!positionals.length) {
+        console.error('send: pass one or more document files (XML or {"invoice": base64} bodies), in the order to send them.');
+        return 2;
+      }
+      if (values.production && values['base-url']) {
+        console.error('send: use either --production or --base-url, not both.');
+        return 2;
+      }
+      const production = !!values.production;
+      const baseUrl = production ? JOFOTARA_PRODUCTION_URL : values['base-url'] ?? 'http://127.0.0.1:8080';
+      const clientId = process.env.JOFOTARA_CLIENT_ID;
+      const secretKey = process.env.JOFOTARA_SECRET_KEY;
+      if (production && (!clientId || !secretKey)) {
+        console.error('send --production: set JOFOTARA_CLIENT_ID and JOFOTARA_SECRET_KEY in the environment (never pass them as arguments).');
+        return 2;
+      }
+      const timeoutMs = Number(values.timeout);
+      if (!(timeoutMs > 0)) {
+        console.error('send: --timeout must be a positive number of milliseconds.');
+        return 2;
+      }
+      const client = createClient({
+        baseUrl,
+        // The mock accepts any non-empty credentials unless it was started with specific ones.
+        clientId: clientId ?? 'test',
+        secretKey: secretKey ?? 'test',
+        timeoutMs,
+        validateBeforeSending: !values['no-validate'],
+      });
+      if (production) console.error(color('yellow', `Sending to PRODUCTION (${baseUrl}): every accepted document is a real tax record.`));
+      else console.error(color('dim', `Sending to ${baseUrl}`));
+
+      const outcomes: { file: string; outcome: SubmitOutcome }[] = [];
+      for (const file of positionals) {
+        const outcome = await client.submit(readFileSync(file, 'utf8'));
+        outcomes.push({ file, outcome });
+        if (!values.json) printOutcome(file, outcome);
+        if (outcome.status !== 'accepted') {
+          const left = positionals.length - outcomes.length;
+          if (left > 0 && !values.json) console.error(color('dim', `Stopped: ${left} later document(s) not sent.`));
+          break;
+        }
+      }
+      if (values.json) console.log(JSON.stringify(outcomes, null, 2));
+      const last = outcomes[outcomes.length - 1].outcome.status;
+      return last === 'accepted' ? 0 : last === 'unknown' ? 3 : 1;
     }
     case 'serve': {
       const { values } = parseArgs({
