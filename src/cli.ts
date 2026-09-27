@@ -15,8 +15,8 @@ Usage:
   jofotara-kit validate [files...] [--json]    Validate XML, a {"invoice": base64} body, or base64 (stdin if no files)
   jofotara-kit serve [--port 8080] [--host 127.0.0.1] [--client-id ID] [--secret-key KEY] [--reject-status 400]
                                                Run a local mock of POST /core/invoices/
-  jofotara-kit template <invoice|credit-note|income-invoice|income-credit-note> [--body]
-                                               Print a sample in the manual's shape (or its JSON request body)
+  jofotara-kit template <name> [--body]        Print a sample in the manual's shape (or its JSON request body)
+                                               ${Object.keys(TEMPLATES).join(', ')}
   jofotara-kit rules [--json]                  List every rule with severity and source (manual page)
   jofotara-kit mcp                             MCP server over stdio (validate_invoice, get_template, list_rules, explain_rule)
 

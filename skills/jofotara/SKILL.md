@@ -22,6 +22,8 @@ npx jofotara-kit template invoice              # 388/012 sales invoice (S, Z and
 npx jofotara-kit template credit-note          # 381/012 partial sales return
 npx jofotara-kit template income-invoice       # 388/011 income invoice (no VAT)
 npx jofotara-kit template income-credit-note   # 381/011 partial income return
+npx jofotara-kit template receivable-invoice   # 388/022 (receivable-credit-note: 381/022)
+npx jofotara-kit template income-receivable-invoice   # 388/021 (income-receivable-credit-note: 381/021)
 npx jofotara-kit validate out/*.xml            # lint XML (also accepts {"invoice": base64} bodies)
 npx jofotara-kit rules                         # every rule with its manual page
 npx jofotara-kit serve --port 8080             # local mock of POST /core/invoices/

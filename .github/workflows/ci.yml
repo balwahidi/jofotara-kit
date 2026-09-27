@@ -23,5 +23,10 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - run: node dist/cli.js template invoice | node dist/cli.js validate
-      - run: node dist/cli.js template income-credit-note | node dist/cli.js validate
+      - name: Every template validates
+        shell: bash
+        run: |
+          for name in invoice credit-note income-invoice income-credit-note \
+                      receivable-invoice receivable-credit-note income-receivable-invoice income-receivable-credit-note; do
+            node dist/cli.js template "$name" | node dist/cli.js validate
+          done

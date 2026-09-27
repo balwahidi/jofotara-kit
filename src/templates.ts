@@ -261,6 +261,9 @@ export const samplePayable = (lines: SampleLine[] = DEFAULT_LINES, track: 'sales
   r3(computeLines(lines, track).reduce((s, l) => s + l.net, 0));
 
 const SAMPLE_ORIGINAL = { id: 'INV-001', uuid: '00000000-0000-4000-8000-000000000000' };
+// Receivable documents need a named buyer (manual p.14); a return repeats the original buyer (p.25).
+const RECEIVABLE_BUYER: SampleBuyer = { scheme: 'TN', id: '87654321', name: 'Example Customer LLC' };
+const receivable = { paymentTerms: 'receivable', customer: RECEIVABLE_BUYER } as const;
 // A partial return: one of the two widgets, and the book — original line numbers 1 and 3.
 const PARTIAL_RETURN: SampleLine[] = [
   { id: 1, name: 'Widget', qty: 1, price: 10, discount: 0.5, taxRate: 16 },
@@ -274,6 +277,12 @@ export const TEMPLATES = {
   'income-invoice': () => sampleInvoice({ track: 'income' }),
   'income-credit-note': () =>
     sampleCreditNote({ ...SAMPLE_ORIGINAL, payable: samplePayable(DEFAULT_LINES, 'income') }, { track: 'income', lines: PARTIAL_RETURN, reason: 'ارجاع فاتورة دخل' }),
+  'receivable-invoice': () => sampleInvoice(receivable),
+  'receivable-credit-note': () =>
+    sampleCreditNote({ ...SAMPLE_ORIGINAL, payable: samplePayable() }, { ...receivable, lines: PARTIAL_RETURN }),
+  'income-receivable-invoice': () => sampleInvoice({ ...receivable, track: 'income' }),
+  'income-receivable-credit-note': () =>
+    sampleCreditNote({ ...SAMPLE_ORIGINAL, payable: samplePayable(DEFAULT_LINES, 'income') }, { ...receivable, track: 'income', lines: PARTIAL_RETURN, reason: 'ارجاع فاتورة دخل' }),
 } satisfies Record<string, () => string>;
 
 export type TemplateName = keyof typeof TEMPLATES;

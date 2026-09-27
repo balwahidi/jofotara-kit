@@ -7,6 +7,7 @@ For complete XML, generate it rather than copying from docs:
 
 ```bash
 npx jofotara-kit template invoice | credit-note | income-invoice | income-credit-note
+npx jofotara-kit template receivable-invoice | receivable-credit-note | income-receivable-invoice | income-receivable-credit-note
 ```
 
 ---
