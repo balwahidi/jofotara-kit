@@ -14,7 +14,8 @@ tax record. `jofotara-kit` lets you get the shape right locally first:
   `Secret-Key` headers, same `{"invoice": base64}` body, `EINV_STATUS` / `EINV_RESULTS` /
   `EINV_QR`-shaped responses. It remembers what it accepted, so duplicates, returns against
   unknown invoices and **over-returns across several partial returns** are rejected, line by line.
-- **`template`** — prints sales and income invoices and (partial) returns in the manual's shape.
+- **`template`** — prints sales and income invoices and (partial) returns, cash and receivable,
+  in the manual's shape.
 - **Agent skill** — teaches Claude Code, Cursor, Devin, Codex & co. how JoFotara works and
   makes them validate their own output instead of guessing.
 
@@ -31,6 +32,12 @@ npx jofotara-kit serve --port 8080
 
 Then point your integration's base URL at `http://127.0.0.1:8080` instead of
 `https://backend.jofotara.gov.jo`. Nothing else changes.
+
+To use it from your test suite or CI, add it as a dev dependency (Node.js 22.18 or later):
+
+```bash
+npm install --save-dev jofotara-kit
+```
 
 ```bash
 curl -s http://127.0.0.1:8080/core/invoices/ \
@@ -55,7 +62,7 @@ Tools: `validate_invoice`, `get_template`, `list_rules`, `explain_rule`.
 ## Install the agent skill
 
 ```bash
-npx skills add skelvar/jofotara-kit
+npx skills add balwahidi/jofotara-kit
 ```
 
 Or copy [`skills/jofotara`](skills/jofotara) into your agent's skills folder
@@ -67,9 +74,22 @@ Or copy [`skills/jofotara`](skills/jofotara) into your agent's skills folder
 |---|---|
 | `validate [files...] [--json]` | Validate XML, a `{"invoice": base64}` request body, or bare base64. Reads stdin if no files. Exit 1 on errors. |
 | `serve [--port] [--host] [--client-id] [--secret-key] [--reject-status]` | Run the mock. With `--client-id/--secret-key` only those credentials pass. `--reject-status 200` tests "HTTP 200 but rejected" handling. |
-| `template <invoice\|credit-note\|income-invoice\|income-credit-note> [--body]` | Print a sample XML, or its JSON request body. |
+| `template <name> [--body]` | Print a sample XML, or its JSON request body. Names below. |
 | `rules [--json]` | List every rule. |
 | `mcp` | MCP server over stdio. |
+
+Templates:
+
+| Name | Type | Document |
+|---|---|---|
+| `invoice` | 388 / 012 | Sales invoice, cash (`S`, `Z` and `O` lines) |
+| `credit-note` | 381 / 012 | Partial sales return |
+| `receivable-invoice` | 388 / 022 | Sales invoice, receivable (named buyer) |
+| `receivable-credit-note` | 381 / 022 | Partial return of a receivable sales invoice |
+| `income-invoice` | 388 / 011 | Income invoice, cash (no VAT) |
+| `income-credit-note` | 381 / 011 | Partial income return |
+| `income-receivable-invoice` | 388 / 021 | Income invoice, receivable (named buyer) |
+| `income-receivable-credit-note` | 381 / 021 | Partial return of a receivable income invoice |
 
 Mock extras: `GET /_kit/invoices` lists accepted documents, `DELETE /_kit/invoices` resets.
 Mock responses add a `JOFOTARA_KIT` key with full findings and fixes; everything else mirrors
@@ -105,9 +125,10 @@ Run `npx jofotara-kit rules` for the full list.
 
 ## Scope
 
-All six document families in the manual, in JOD: income (`011`/`021`), general sales
-(`012`/`022`) and special sales (`013`/`023`), each as new invoice (388) and return (381) —
-full, partial and multiple returns.
+The validator and the mock cover all six document families in the manual, in JOD: income
+(`011`/`021`), general sales (`012`/`022`) and special sales (`013`/`023`), each as new
+invoice (388) and return (381) — full, partial and multiple returns. Templates cover income and
+general sales; special-sales templates are not written yet.
 
 ## Contributing
 

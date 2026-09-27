@@ -39,6 +39,14 @@
     "agent-skill"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/balwahidi/jofotara-kit.git"
+  },
+  "homepage": "https://github.com/balwahidi/jofotara-kit#readme",
+  "bugs": {
+    "url": "https://github.com/balwahidi/jofotara-kit/issues"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
     "@xmldom/xmldom": "0.9.12",
