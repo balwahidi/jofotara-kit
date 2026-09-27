@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { parseArgs, styleText } from 'node:util';
+import { BuildError, buildDocument } from './build.ts';
+import type { BuildRequest } from './build.ts';
 import { serveMcpStdio } from './mcp.ts';
 import { createMockServer } from './mock.ts';
 import { RULES } from './rules.ts';
@@ -12,6 +15,10 @@ import type { Report } from './validate.ts';
 const HELP = `jofotara-kit — local tooling for JoFotara (Jordan ISTD e-invoicing) integrations
 
 Usage:
+  jofotara-kit build [input.json] [--body | --json]
+                                               Build a valid invoice or return from JSON (stdin if no file). Prints XML,
+                                               the request body, or {xml, body, document}. Returns may name the original
+                                               and previous returns as file paths, relative to the JSON file.
   jofotara-kit validate [files...] [--json]    Validate XML, a {"invoice": base64} body, or base64 (stdin if no files)
   jofotara-kit serve [--port 8080] [--host 127.0.0.1] [--client-id ID] [--secret-key KEY] [--reject-status 400]
                                                Run a local mock of POST /core/invoices/
@@ -20,7 +27,7 @@ Usage:
   jofotara-kit rules [--json]                  List every rule with severity and source (manual page)
   jofotara-kit mcp                             MCP server over stdio (validate_invoice, get_template, list_rules, explain_rule)
 
-Exit codes: 0 ok, 1 validation errors, 2 usage error.
+Exit codes: 0 ok, 1 validation or build errors, 2 usage error.
 Not affiliated with the Income and Sales Tax Department (ISTD).`;
 
 const color = (fmt: Parameters<typeof styleText>[0], s: string) => styleText(fmt, s);
@@ -35,6 +42,21 @@ function printReport(name: string, r: Report) {
     if (f.path) console.log(color('dim', `          at ${f.path}`));
     console.log(color('dim', `          fix: ${f.fix}`));
   }
+}
+
+/** A return's `original` and `previousReturns` may be inline documents or paths relative to the JSON file. */
+function withDocumentFiles(request: BuildRequest, baseDir: string): BuildRequest {
+  if (request?.type !== 'credit-note') return request;
+  const load = (value: unknown) => {
+    if (typeof value !== 'string') return value as string;
+    const s = value.trim();
+    return s.startsWith('<') || s.startsWith('{') ? value : readFileSync(resolve(baseDir, s), 'utf8');
+  };
+  return {
+    ...request,
+    original: load(request.original),
+    ...(Array.isArray(request.previousReturns) ? { previousReturns: request.previousReturns.map(load) } : {}),
+  };
 }
 
 async function readStdin() {
@@ -59,6 +81,32 @@ async function main(argv: string[]): Promise<number> {
       if (values.json) console.log(JSON.stringify(results, null, 2));
       else results.forEach((r) => printReport(r.file, r));
       return results.every((r) => r.ok) ? 0 : 1;
+    }
+    case 'build': {
+      const { values, positionals } = parseArgs({ args: rest, allowPositionals: true, options: { body: { type: 'boolean' }, json: { type: 'boolean' } } });
+      const file = positionals[0];
+      if (!file && process.stdin.isTTY) {
+        console.error('build: pass an input JSON file, or pipe JSON on stdin.');
+        return 2;
+      }
+      const fromFile = file !== undefined && file !== '-';
+      let request: BuildRequest;
+      try {
+        request = JSON.parse(fromFile ? readFileSync(file, 'utf8') : await readStdin());
+      } catch (e) {
+        console.error(`build: input is not valid JSON (${(e as Error).message}).`);
+        return 2;
+      }
+      try {
+        const result = buildDocument(withDocumentFiles(request, fromFile ? dirname(resolve(file)) : process.cwd()));
+        for (const w of result.warnings) console.error(`${color('yellow', 'warning')}  ${w}`);
+        console.log(values.json ? JSON.stringify(result, null, 2) : values.body ? result.body : result.xml);
+        return 0;
+      } catch (e) {
+        if (!(e instanceof BuildError)) throw e;
+        console.error(`${color('red', 'BUILD ERROR')}  ${e.message}`);
+        return 1;
+      }
     }
     case 'serve': {
       const { values } = parseArgs({
