@@ -40,9 +40,10 @@ describe('validate', () => {
   });
 
   it('accepts any number of decimals but only plain decimals and currencyID JO', () => {
-    const twoDp = invoice.replace(/currencyID="JO">(\d+)\.(\d{2})\d</g, 'currencyID="JO">$1.$2<');
+    const twoDp = invoice.replace(/currencyID="JO">(\d+)\.(\d{2})\d{4}</g, 'currencyID="JO">$1.$2<');
+    assert.notEqual(twoDp, invoice);
     assert.deepEqual(rules(twoDp), []);
-    assert.deepEqual(rules(invoice.replace('>30.040</cbc:PayableAmount>', '>3.004e1</cbc:PayableAmount>')), ['JOF-AMT-001']);
+    assert.deepEqual(rules(invoice.replace('>30.040000</cbc:PayableAmount>', '>3.004e1</cbc:PayableAmount>')), ['JOF-AMT-001']);
     assert.ok(rules(invoice.replaceAll('currencyID="JO"', 'currencyID="JOD"')).includes('JOF-AMT-002'));
   });
 
@@ -51,7 +52,7 @@ describe('validate', () => {
     assert.deepEqual(rules(invoice.replace('UN/ECE 5305">O<', 'UN/ECE 5305">S<')), ['JOF-LIN-006']);
     const rate6 = sampleInvoice({ lines: [{ name: 'X', qty: 1, price: 100, taxRate: 6 }] });
     assert.deepEqual(rules(rate6), ['JOF-LIN-009']);
-    const wrongTax = invoice.replace(/(<cbc:TaxAmount currencyID="JO">)3\.040(<\/cbc:TaxAmount>\s*<cbc:RoundingAmount)/, '$13.000$2');
+    const wrongTax = invoice.replace(/(<cbc:TaxAmount currencyID="JO">)3\.040000(<\/cbc:TaxAmount>\s*<cbc:RoundingAmount)/, '$13.000$2');
     assert.ok(rules(wrongTax).includes('JOF-LIN-008'));
   });
 
@@ -73,7 +74,7 @@ describe('validate', () => {
   });
 
   it('flags wrong totals and element order', () => {
-    assert.deepEqual(rules(invoice.replace('>30.040</cbc:PayableAmount>', '>31.000</cbc:PayableAmount>')), ['JOF-MTH-008']);
+    assert.deepEqual(rules(invoice.replace('>30.040000</cbc:PayableAmount>', '>31.000</cbc:PayableAmount>')), ['JOF-MTH-008']);
     const swapped = invoice.replace(/(<cbc:DocumentCurrencyCode>JOD<\/cbc:DocumentCurrencyCode>)(\s*)(<cbc:TaxCurrencyCode>JOD<\/cbc:TaxCurrencyCode>)/, '$3$2$1');
     assert.deepEqual(rules(swapped), ['JOF-XML-004']);
   });
@@ -94,13 +95,13 @@ describe('validate', () => {
     assert.ok(rules(credit.replace(/<cac:BillingReference>[\s\S]*<\/cac:BillingReference>/, '')).includes('JOF-RET-001'));
     assert.deepEqual(rules(credit.replace(/\s*<cbc:PrepaidAmount[^/]*\/cbc:PrepaidAmount>/, '')), ['JOF-RET-011']);
     assert.deepEqual(rules(credit.replace(/\s*<cbc:BaseQuantity[^/]*\/cbc:BaseQuantity>/, '')), ['JOF-RET-009']);
-    assert.deepEqual(rules(credit.replace(/(11\.020<\/cbc:RoundingAmount>\s*<cac:TaxSubtotal>)\s*<cbc:TaxableAmount[^/]*\/cbc:TaxableAmount>/, '$1')), ['JOF-RET-006']);
-    const noDocSubtotals = credit.replace(/(<cac:TaxTotal>\s*<cbc:TaxAmount currencyID="JO">1\.520<\/cbc:TaxAmount>)[\s\S]*?(\s*<\/cac:TaxTotal>\s*<cac:LegalMonetaryTotal>)/, '$1$2');
+    assert.deepEqual(rules(credit.replace(/(11\.020000<\/cbc:RoundingAmount>\s*<cac:TaxSubtotal>)\s*<cbc:TaxableAmount[^/]*\/cbc:TaxableAmount>/, '$1')), ['JOF-RET-006']);
+    const noDocSubtotals = credit.replace(/(<cac:TaxTotal>\s*<cbc:TaxAmount currencyID="JO">1\.520000<\/cbc:TaxAmount>)[\s\S]*?(\s*<\/cac:TaxTotal>\s*<cac:LegalMonetaryTotal>)/, '$1$2');
     assert.deepEqual(rules(noDocSubtotals), ['JOF-RET-010']);
   });
 
   it('checks document tax subtotals per rate against the lines', () => {
-    const wrong = credit.replace(/(<cac:TaxSubtotal>\s*<cbc:TaxableAmount currencyID="JO">)9\.500(<\/cbc:TaxableAmount>\s*<cbc:TaxAmount currencyID="JO">1\.520<\/cbc:TaxAmount>\s*<cac:TaxCategory>\s*<cbc:ID schemeAgencyID="6" schemeID="UN\/ECE 5305">S<\/cbc:ID>\s*<cbc:Percent>16<\/cbc:Percent>\s*<cac:TaxScheme>\s*<cbc:ID[^>]*>VAT<\/cbc:ID>\s*<\/cac:TaxScheme>\s*<\/cac:TaxCategory>\s*<\/cac:TaxSubtotal>\s*<cac:TaxSubtotal>)/, '$19.000$2');
+    const wrong = credit.replace(/(<cac:TaxSubtotal>\s*<cbc:TaxableAmount currencyID="JO">)9\.500000(<\/cbc:TaxableAmount>\s*<cbc:TaxAmount currencyID="JO">1\.520000<\/cbc:TaxAmount>\s*<cac:TaxCategory>\s*<cbc:ID schemeAgencyID="6" schemeID="UN\/ECE 5305">S<\/cbc:ID>\s*<cbc:Percent>16<\/cbc:Percent>\s*<cac:TaxScheme>\s*<cbc:ID[^>]*>VAT<\/cbc:ID>\s*<\/cac:TaxScheme>\s*<\/cac:TaxCategory>\s*<\/cac:TaxSubtotal>\s*<cac:TaxSubtotal>)/, '$19.000$2');
     assert.deepEqual(rules(wrong), ['JOF-MTH-010']);
   });
 

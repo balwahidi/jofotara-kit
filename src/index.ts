@@ -7,3 +7,7 @@ export type { MockOptions, StoredInvoice } from './mock.ts';
 export { TEMPLATES, computeLines, sampleCreditNote, sampleInvoice, toRequestBody } from './templates.ts';
 export type { CreditNoteOptions, OriginalInvoice, SampleLine, SampleOptions, TemplateName } from './templates.ts';
 export { createMcpServer } from './mcp.ts';
+export { BuildError, SPECIAL_SALES_WARNING, WALK_IN_BUYER, buildCreditNote, buildDocument, buildInvoice } from './build.ts';
+export type { BuildRequest, BuildResult, BuyerInput, CreditNoteInput, Discount, InvoiceInput, InvoiceLineInput, ReturnLineInput } from './build.ts';
+export { DocumentReadError, readDocument } from './document.ts';
+export type { Buyer, DocumentLine, JofotaraDocument, PaymentTerms, Seller, TaxCategory, Totals, Track } from './document.ts';
